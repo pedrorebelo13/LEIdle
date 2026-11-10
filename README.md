@@ -2,7 +2,7 @@
 
 Wordle da praxe de Engenharia Informática da UMinho. Tem dois modos:
 
-- **Clássico** ("Quem é a besta de hoje?"): 5 tentativas que comparam nome (A→Z), ano, número e género. Antes da última tentativa podes ver a foto desfocada.
+- **Clássico** ("Quem é a besta de hoje?"): 5 tentativas que comparam a primeira letra do nome, ano, número e género. Antes da última tentativa podes ver a foto desfocada.
 - **Triggers** ("De quem caralho é este trigger?"): 8 tentativas, e cada erro mostra mais um trigger.
 
 ## Correr localmente

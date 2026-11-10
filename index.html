@@ -131,6 +131,7 @@ const LANCAMENTO = "2026-11-07";   // dia 0 do calendário de bestas
 const key = p => p.ano + "-" + p.numero;
 const BY = Object.fromEntries(DATA.map(p => [key(p), p]));
 const collator = new Intl.Collator("pt", {sensitivity:"base"});
+const sameFirstLetter = (a, b) => collator.compare([...a.trim()][0] ?? "", [...b.trim()][0] ?? "") === 0;
 
 /* ---------- datas e seeds ---------- */
 function lisbonDate(){
@@ -215,10 +216,9 @@ function numContent(g, t){
   return g===t ? `${g}` : `${g}<span class="arr">${t>g?"↑ maior":"↓ menor"}</span>`;
 }
 function classicRow(g, t, isNew){
-  const nameCmp = collator.compare(t.nome, g.nome);
-  const nameTxt = nameCmp===0 ? esc(g.nome)
-    : `${esc(g.nome)}<span class="arr">${nameCmp>0?"↓ depois (A→Z)":"↑ antes (A→Z)"}</span>`;
-  return cell(nameCmp===0, nameTxt, isNew, 0, "nm")
+  const nameOk = sameFirstLetter(t.nome, g.nome);
+  const nameTxt = `${esc(g.nome)}<span class="arr">${nameOk?"certa":"errada"}</span>`;
+  return cell(nameOk, nameTxt, isNew, 0, "nm")
        + cell(g.ano===t.ano, numContent(g.ano,t.ano), isNew, 1)
        + cell(g.numero===t.numero, numContent(g.numero,t.numero), isNew, 2)
        + cell(g.genero===t.genero, genLabel(g.genero), isNew, 3);
@@ -273,7 +273,7 @@ function render(){
   if(showResult) h += resultCard(st, t);
 
   if(mode==="classico" && st.guesses.length){
-    h += `<div class="grid-wrap"><div class="grid"><div class="h">Nome</div><div class="h">Ano</div><div class="h">Número</div><div class="h">Género</div>`;
+    h += `<div class="grid-wrap"><div class="grid"><div class="h">1ª letra</div><div class="h">Ano</div><div class="h">Número</div><div class="h">Género</div>`;
     for(let i=st.guesses.length-1;i>=0;i--) h += classicRow(BY[st.guesses[i]], t, busy && i===animIdx);
     h += `</div></div>`;
   }
@@ -305,7 +305,7 @@ function shareText(st){
   const lines = st.guesses.map(k=>{
     if(mode==="trigger") return k===st.target ? "🟩" : "🟥";
     const g = BY[k];
-    return [collator.compare(t.nome,g.nome)===0, g.ano===t.ano, g.numero===t.numero, g.genero===t.genero].map(b=>b?"🟩":"🟥").join("");
+    return [sameFirstLetter(t.nome,g.nome), g.ano===t.ano, g.numero===t.numero, g.genero===t.genero].map(b=>b?"🟩":"🟥").join("");
   });
   const head = `LEIdle ${mode==="classico"?"Clássico":"Triggers"} ${st.date} · ${st.won?st.guesses.length:"X"}/${CFG[mode].max}${st.photo?" 📸":""}`;
   return head + "\n" + (mode==="trigger" ? lines.join("") : lines.join("\n"));

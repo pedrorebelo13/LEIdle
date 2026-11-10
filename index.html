@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LEIdle</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: uma coluna estreita tipo ecrã de terminal; cada tentativa é uma etiqueta de disquete. Tema único escuro (traje preto). */
+:root{
+  --bg:#0d0f14; --panel:#161a22; --line:#2a303d; --fg:#e8e6df; --muted:#8b92a3;
+  --label:#efe9d8; --label-ink:#1b1d22;
+  --disk:#2d5bd7; --ok:#2f9e5b; --bad:#b8433a; --part:#d08a2a;
+  --display:"Silkscreen",ui-monospace,monospace;
+  --body:"IBM Plex Sans",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.5}
+.wrap{max-width:720px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:20px}
+header{display:flex;align-items:center;gap:14px}
+header svg{flex:none}
+h1{font-family:var(--display);font-size:clamp(28px,7vw,40px);margin:0;letter-spacing:.02em;line-height:1}
+h1 span{color:var(--disk)}
+.tag{font-family:var(--mono);font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tabs button{font:600 14px/1.25 var(--body);padding:12px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;text-align:left}
+.tabs button[aria-selected="true"]{background:var(--disk);border-color:var(--disk);color:#fff}
+.tabs small{display:block;font:500 11px var(--mono);text-transform:uppercase;letter-spacing:.08em;opacity:.8;margin-bottom:2px}
+button:focus-visible,input:focus-visible{outline:2px solid var(--label);outline-offset:2px}
+.question{font-family:var(--display);font-size:clamp(18px,4.5vw,24px);margin:0;text-wrap:balance}
+.pips{display:flex;gap:6px;align-items:center;font:500 12px var(--mono);color:var(--muted)}
+.pip{width:14px;height:16px;border-radius:2px;background:var(--line);position:relative}
+.pip::after{content:"";position:absolute;left:3px;right:3px;top:2px;height:5px;background:var(--bg);border-radius:1px}
+.pip.used{background:var(--bad)} .pip.win{background:var(--ok)}
+.search{position:relative}
+.search input{width:100%;font:500 16px var(--body);padding:14px 16px;border-radius:6px;border:2px solid var(--line);background:var(--panel);color:var(--fg)}
+.search input:disabled{opacity:.5}
+.sugg{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--panel);border:1px solid var(--line);border-radius:6px;list-style:none;margin:0;padding:4px;z-index:5;max-height:260px;overflow:auto}
+.sugg li{padding:10px 12px;border-radius:4px;cursor:pointer;display:flex;justify-content:space-between;gap:12px}
+.sugg li[aria-selected="true"],.sugg li:hover{background:var(--line)}
+.sugg .n{font:500 12px var(--mono);color:var(--muted)}
+.grid-wrap{overflow-x:auto}
+.grid{display:grid;grid-template-columns:minmax(96px,1.4fr) repeat(3,minmax(64px,1fr));gap:6px;min-width:340px}
+.grid .h{font:500 11px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:0 4px}
+.cell{border-radius:4px;padding:12px 6px;text-align:center;font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-height:60px;color:#fff;font-variant-numeric:tabular-nums;background:var(--c);word-break:break-word}
+.cell.nm{font-family:var(--display);font-size:13px}
+.cell.ok{--c:var(--ok)} .cell.bad{--c:var(--bad)}
+.cell .arr{font:500 11px var(--mono);opacity:.9}
+/* cada célula nova vira-se uma a uma: começa neutra, a cor só aparece a meio da volta */
+.cell.new{animation:reveal .55s var(--d,0ms) both}
+@keyframes reveal{
+  0%{transform:rotateX(0);background:var(--panel);color:var(--muted)}
+  49.9%{transform:rotateX(90deg);background:var(--panel);color:var(--muted)}
+  50%{transform:rotateX(90deg);background:var(--c);color:#fff}
+  100%{transform:rotateX(0);background:var(--c);color:#fff}}
+.cell.ok.new.last{animation:reveal .55s var(--d,0ms) both, win .5s calc(var(--d,0ms) + .6s) both}
+@keyframes win{50%{transform:translateY(-8px)}}
+.trig.new{animation:drop .45s var(--d,0ms) both}
+@keyframes drop{from{opacity:0;transform:translateY(-10px) rotateX(70deg)}to{opacity:1;transform:none}}
+.miss.new{animation:missed .6s both}
+@keyframes missed{0%{background:var(--panel);transform:scale(.8)}40%{background:var(--panel)}50%{background:var(--bad);transform:translateX(-5px)}70%{transform:translateX(5px)}100%{background:var(--bad);transform:none}}
+.miss.hit{background:var(--ok)}
+@media (prefers-reduced-motion:reduce){.cell.new,.trig.new,.miss.new{animation:none!important}}
+.order-note{font-size:13px;color:var(--muted);margin:-8px 0 4px;display:flex;gap:8px;align-items:center}
+.order-note b{font:700 11px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--part);border:1px solid var(--part);border-radius:3px;padding:1px 6px}
+.trigs{display:flex;flex-direction:column;gap:10px}
+.trig{background:var(--label);color:var(--label-ink);border-radius:4px;padding:14px 16px 14px 52px;position:relative;font-size:15px}
+.trig::before{content:attr(data-n);position:absolute;left:12px;top:12px;font:700 14px var(--display);color:var(--disk)}
+.trig.locked{background:var(--panel);color:var(--muted);border:1px dashed var(--line)}
+.trig.locked::before{color:var(--muted)}
+.misses{display:flex;flex-wrap:wrap;gap:6px}
+.miss{font:600 13px var(--body);background:var(--bad);color:#fff;padding:4px 10px;border-radius:3px}
+.photo-btn{font:700 15px var(--display);padding:16px;border-radius:6px;border:2px solid var(--part);background:color-mix(in srgb,var(--part) 18%,var(--bg));color:var(--fg);cursor:pointer;animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--part) 25%,transparent)}}
+@media (prefers-reduced-motion:reduce){.photo-btn{animation:none}}
+.photo{display:flex;justify-content:center}
+.photo .frame{width:180px;max-width:100%;aspect-ratio:1;border-radius:6px;overflow:hidden;border:2px solid var(--line)}
+.photo .frame>*{width:100%;height:100%;object-fit:cover;display:block}
+.photo .blur>*{filter:blur(14px) saturate(.8);transform:scale(1.15)}
+.result{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px;display:flex;flex-direction:column;gap:14px;align-items:center;text-align:center}
+.result h3{font-family:var(--display);margin:0;font-size:22px}
+.result .who{font:500 13px var(--mono);color:var(--muted)}
+.row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.btn{font:600 14px var(--body);padding:10px 16px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}
+.btn.primary{background:var(--disk);border-color:var(--disk);color:#fff}
+.note{font-size:13px;color:var(--muted)}
+.practice{font:500 11px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--part)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true"><rect x="2" y="2" width="40" height="40" rx="3" fill="var(--disk)"/><rect x="11" y="2" width="20" height="13" fill="var(--panel)"/><rect x="24" y="4" width="5" height="9" fill="var(--disk)"/><rect x="8" y="22" width="28" height="18" rx="1" fill="var(--label)"/><rect x="12" y="27" width="20" height="2" fill="var(--muted)"/><rect x="12" y="32" width="14" height="2" fill="var(--muted)"/></svg>
+    <div>
+      <h1>LEI<span>dle</span></h1>
+      <div class="tag">Praxe de Eng. Informática · UMinho</div>
+    </div>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tab-classico" aria-selected="true"><small>Clássico</small>Quem é a besta de hoje?</button>
+    <button role="tab" id="tab-trigger" aria-selected="false"><small>Triggers</small>De quem caralho é este trigger?</button>
+  </div>
+
+  <main id="game"></main>
+</div>
+
+<script>
+// Os dados vivem em leidle.json. Para adicionar pessoas, edita só esse ficheiro.
+(async () => {
+let DATA;
+try {
+  const res = await fetch("leidle.json", { cache: "no-cache" });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  DATA = (await res.json()).engenheiros;
+} catch (e) {
+  document.getElementById("game").innerHTML =
+    `<p class="note">Não consegui carregar <code>leidle.json</code> (${e.message}). ` +
+    `Se abriste o ficheiro com duplo clique, corre <code>python3 -m http.server</code> nesta pasta e abre http://localhost:8000.</p>`;
+  return;
+}
+
+const CFG = { classico:{max:5}, trigger:{max:8} };
+const MODO_TREINO = true;          // pôr a false no lançamento
+const LANCAMENTO = "2026-11-07";   // dia 0 do calendário de bestas
+
+const key = p => p.ano + "-" + p.numero;
+const BY = Object.fromEntries(DATA.map(p => [key(p), p]));
+const collator = new Intl.Collator("pt", {sensitivity:"base"});
+
+/* ---------- datas e seeds ---------- */
+function lisbonDate(){
+  return new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Lisbon",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+}
+function dayNumber(iso){ const [y,m,d]=iso.split("-").map(Number); return Math.floor(Date.UTC(y,m-1,d)/864e5); }
+function hashStr(s){ let h=2166136261; for(const c of s){ h^=c.codePointAt(0); h=Math.imul(h,16777619);} return h>>>0; }
+function rng(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0; let t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function shuffle(arr, seed){ const a=arr.slice(), r=rng(seed); for(let i=a.length-1;i>0;i--){ const j=Math.floor(r()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+function poolFor(mode){ return mode==="trigger" ? DATA.filter(p=>p.triggers.length) : DATA; }
+/* Calendário: os dias contam-se a partir do lançamento e agrupam-se em ciclos de N dias (N = nº de pessoas).
+   Em cada ciclo a lista é baralhada e cada pessoa sai exatamente uma vez.
+   Na passagem de ciclo garante-se que o primeiro do novo ciclo não é o último do anterior. */
+function cycleOrder(mode, pool, c){
+  const order = shuffle(pool, hashStr("leidle-"+mode+"-"+c));
+  if(pool.length > 2){
+    const prevLast = shuffle(pool, hashStr("leidle-"+mode+"-"+(c-1)))[pool.length-1];
+    if(order[0] === prevLast) [order[0], order[1]] = [order[1], order[0]];
+  }
+  return order;
+}
+function dailyTarget(mode, iso){
+  const pool = poolFor(mode).map(key).sort();
+  const n = pool.length;
+  const day = dayNumber(iso) - dayNumber(LANCAMENTO);
+  const c = Math.floor(day / n), i = ((day % n) + n) % n;
+  return cycleOrder(mode, pool, c)[i];
+}
+function triggerOrder(p, seedStr){ return shuffle(p.triggers, hashStr(seedStr)); }
+
+/* ---------- estado ---------- */
+function load(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } }
+function save(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+
+let mode = "classico";
+let S = {};
+function freshState(m, practice){
+  const iso = lisbonDate();
+  const target = practice ? poolFor(m)[Math.floor(Math.random()*poolFor(m).length)] : null;
+  return { date:iso, practice:!!practice, target: practice ? key(target) : dailyTarget(m, iso),
+           seed: practice ? String(Math.random()) : iso, guesses:[], done:false, won:false, photo:false };
+}
+function getState(m){
+  if(S[m]) return S[m];
+  const saved = load("leidle-"+m);
+  S[m] = (saved && saved.date===lisbonDate() && !saved.practice && BY[saved.target]) ? saved : freshState(m);
+  return S[m];
+}
+function persist(){ const st=S[mode]; if(!st.practice) save("leidle-"+mode, st); }
+
+/* ---------- UI ---------- */
+const $game = document.getElementById("game");
+const esc = s => String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const genLabel = g => g==="F" ? "Feminino" : g==="M" ? "Masculino" : "?";
+
+function avatar(p){
+  if(p.foto) return `<img src="${esc(p.foto)}" alt="">`;
+  const hue = hashStr(p.nome) % 360;
+  return `<svg viewBox="0 0 100 100"><rect width="100" height="100" fill="hsl(${hue} 45% 38%)"/><circle cx="50" cy="40" r="18" fill="hsl(${hue} 30% 75%)"/><path d="M16 100c4-22 18-32 34-32s30 10 34 32z" fill="hsl(${hue} 30% 75%)"/><text x="50" y="94" text-anchor="middle" font-family="Silkscreen,monospace" font-size="14" fill="#fff">${esc(p.nome.slice(0,3).toUpperCase())}</text></svg>`;
+}
+
+function pips(st){
+  const max = CFG[mode].max;
+  let h = "";
+  for(let i=0;i<max;i++){
+    const cls = i<st.guesses.length ? (st.won && i===st.guesses.length-1 ? "win" : "used") : "";
+    h += `<span class="pip ${cls}"></span>`;
+  }
+  return `<div class="pips">${h}<span>${st.guesses.length}/${max} tentativas</span>${st.practice?'<span class="practice">· treino</span>':''}</div>`;
+}
+
+const STEP = 350;                    // ms entre cada célula a virar
+const CELL_MS = 550;
+let busy = false, animIdx = -1;      // durante a animação o input fica bloqueado e o resultado espera
+
+function cell(ok, content, isNew, j, extra=""){
+  const cls = `cell ${ok?"ok":"bad"} ${extra} ${isNew?"new":""} ${isNew&&j===3?"last":""}`;
+  return `<div class="${cls}" style="--d:${j*STEP}ms">${content}</div>`;
+}
+function numContent(g, t){
+  return g===t ? `${g}` : `${g}<span class="arr">${t>g?"↑ maior":"↓ menor"}</span>`;
+}
+function classicRow(g, t, isNew){
+  const nameCmp = collator.compare(t.nome, g.nome);
+  const nameTxt = nameCmp===0 ? esc(g.nome)
+    : `${esc(g.nome)}<span class="arr">${nameCmp>0?"↓ depois (A→Z)":"↑ antes (A→Z)"}</span>`;
+  return cell(nameCmp===0, nameTxt, isNew, 0, "nm")
+       + cell(g.ano===t.ano, numContent(g.ano,t.ano), isNew, 1)
+       + cell(g.numero===t.numero, numContent(g.numero,t.numero), isNew, 2)
+       + cell(g.genero===t.genero, genLabel(g.genero), isNew, 3);
+}
+
+const lastShown = {};   // quantos triggers já estavam visíveis no último render, por modo
+
+function render(){
+  const st = getState(mode);
+  const t = BY[st.target];
+  const max = CFG[mode].max;
+  const showResult = st.done && !busy;
+  let h = "";
+
+  if(mode==="classico"){
+    h += `<p class="question">Quem é a besta de hoje?</p>`;
+  } else {
+    h += `<p class="question">De quem caralho é este trigger?</p>`;
+    h += `<p class="order-note"><b>Atenção</b> Os triggers aparecem baralhados, não pela ordem da pessoa.</p>`;
+    const order = triggerOrder(t, st.seed);
+    let misses = st.guesses.filter(k=>k!==st.target).length;
+    if(busy && st.guesses[animIdx]!==st.target) misses--;          // o trigger novo só cai depois do vermelho
+    const shown = showResult ? order.length : Math.min(order.length, 1 + misses);
+    const prev = lastShown[mode] ?? shown;
+    h += `<div class="trigs">`;
+    order.forEach((tx,i)=>{
+      if(i<shown){
+        const isNew = i>=prev;
+        h += `<div class="trig ${isNew?"new":""}" style="--d:${(i-prev)*120}ms" data-n="#${i+1}">${esc(tx)}</div>`;
+      } else {
+        h += `<div class="trig locked" data-n="#${i+1}">Desbloqueia com mais uma tentativa errada</div>`;
+      }
+    });
+    h += `</div>`;
+    lastShown[mode] = shown;
+  }
+
+  h += `<div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">` + pips(st);
+
+  if(!st.done || busy){
+    h += `<div class="search"><input id="guess" type="text" autocomplete="off" placeholder="Escreve um nome ou número…" aria-label="Palpite" ${busy?"disabled":""}><ul class="sugg" id="sugg" hidden role="listbox"></ul></div>`;
+  }
+
+  // botão da foto: aparece antes da última tentativa do modo clássico
+  if(mode==="classico" && !st.done && !busy && st.guesses.length===max-1 && !st.photo){
+    h += `<button class="photo-btn" id="photo-btn">Última tentativa · Ver foto desfocada</button>`;
+  }
+  if(mode==="classico" && st.photo && !showResult){
+    h += `<div class="photo"><div class="frame blur">${avatar(t)}</div></div>`;
+  }
+
+  if(showResult) h += resultCard(st, t);
+
+  if(mode==="classico" && st.guesses.length){
+    h += `<div class="grid-wrap"><div class="grid"><div class="h">Nome</div><div class="h">Ano</div><div class="h">Número</div><div class="h">Género</div>`;
+    for(let i=st.guesses.length-1;i>=0;i--) h += classicRow(BY[st.guesses[i]], t, busy && i===animIdx);
+    h += `</div></div>`;
+  }
+  if(mode==="trigger" && st.guesses.length){
+    h += `<div class="misses">${st.guesses.map((k,i)=>`<span class="miss ${k===st.target?"hit":""} ${busy&&i===animIdx?"new":""}">${esc(BY[k].nome)}</span>`).join("")}</div>`;
+  }
+  h += `</div>`;
+  $game.innerHTML = h;
+  wire(st);
+}
+
+function resultCard(st, t){
+  const title = st.won ? (st.guesses.length===1 ? "À primeira, Senhor Engenheiro" : "Acertaste") : "Falhaste, besta";
+  return `<div class="result">
+    <h3>${title}</h3>
+    <div class="photo"><div class="frame">${avatar(t)}</div></div>
+    <div><strong style="font-family:var(--display);font-size:20px">${esc(t.nome)}</strong>
+      <div class="who">${t.ano} · nº ${t.numero} · ${genLabel(t.genero)}</div></div>
+    <div class="row">
+      ${st.practice ? "" : `<button class="btn primary" id="share">Copiar resultado</button>`}
+      ${MODO_TREINO ? `<button class="btn" id="again">Jogar em treino</button>` : ""}
+    </div>
+    ${st.practice ? "" : `<div class="note">Nova besta em <span id="cd" style="font-family:var(--mono)"></span></div>`}
+  </div>`;
+}
+
+function shareText(st){
+  const t = BY[st.target];
+  const lines = st.guesses.map(k=>{
+    if(mode==="trigger") return k===st.target ? "🟩" : "🟥";
+    const g = BY[k];
+    return [collator.compare(t.nome,g.nome)===0, g.ano===t.ano, g.numero===t.numero, g.genero===t.genero].map(b=>b?"🟩":"🟥").join("");
+  });
+  const head = `LEIdle ${mode==="classico"?"Clássico":"Triggers"} ${st.date} · ${st.won?st.guesses.length:"X"}/${CFG[mode].max}${st.photo?" 📸":""}`;
+  return head + "\n" + (mode==="trigger" ? lines.join("") : lines.join("\n"));
+}
+
+function makeGuess(k){
+  const st = getState(mode);
+  if(busy || st.done || st.guesses.includes(k)) return;
+  st.guesses.push(k);
+  if(k===st.target){ st.done=true; st.won=true; }
+  else if(st.guesses.length>=CFG[mode].max){ st.done=true; }
+  persist();
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const dur = reduce ? 0 : mode==="classico" ? 3*STEP + CELL_MS + (st.won ? 650 : 150) : 700;
+  busy = true; animIdx = st.guesses.length-1;
+  render();
+  setTimeout(()=>{
+    busy = false; animIdx = -1;
+    render();
+    const inp = document.getElementById("guess"); if(inp) inp.focus();
+  }, dur);
+}
+
+function wire(st){
+  const inp = document.getElementById("guess"), ul = document.getElementById("sugg");
+  if(inp){
+    let items = [], sel = 0;
+    const draw = ()=>{
+      const q = inp.value.trim().toLowerCase();
+      if(!q){ ul.hidden = true; items=[]; return; }
+      const norm = s=>s.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
+      items = DATA.filter(p=>!st.guesses.includes(key(p)) && (norm(p.nome).includes(norm(q)) || String(p.numero).startsWith(q)));
+      sel = 0;
+      ul.innerHTML = items.length ? items.map((p,i)=>`<li role="option" data-k="${key(p)}" aria-selected="${i===sel}"><span>${esc(p.nome)}</span><span class="n">${p.ano} · nº ${p.numero}</span></li>`).join("")
+                                  : `<li style="cursor:default;color:var(--muted)">Ninguém com esse nome</li>`;
+      ul.hidden = false;
+    };
+    inp.addEventListener("input", draw);
+    inp.addEventListener("keydown", e=>{
+      if(e.key==="ArrowDown"||e.key==="ArrowUp"){ e.preventDefault(); if(!items.length) return; sel=(sel+(e.key==="ArrowDown"?1:-1)+items.length)%items.length; [...ul.children].forEach((li,i)=>li.setAttribute("aria-selected", i===sel)); }
+      if(e.key==="Enter" && items[sel]) makeGuess(key(items[sel]));
+      if(e.key==="Escape") ul.hidden = true;
+    });
+    ul.addEventListener("mousedown", e=>{ const li=e.target.closest("li[data-k]"); if(li){ e.preventDefault(); makeGuess(li.dataset.k); } });
+  }
+  const pb = document.getElementById("photo-btn");
+  if(pb) pb.onclick = ()=>{ st.photo = true; persist(); render(); };
+  const again = document.getElementById("again");
+  if(again) again.onclick = ()=>{ S[mode] = freshState(mode, true); delete lastShown[mode]; render(); };
+  const sh = document.getElementById("share");
+  if(sh) sh.onclick = async ()=>{
+    const txt = shareText(st);
+    try{ await navigator.clipboard.writeText(txt); sh.textContent="Copiado"; }
+    catch(e){ sh.insertAdjacentHTML("afterend", `<pre style="text-align:left;user-select:all;margin:0">${esc(txt)}</pre>`); sh.remove(); }
+  };
+  tickCountdown();
+}
+
+function tickCountdown(){
+  const el = document.getElementById("cd"); if(!el) return;
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Lisbon",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(new Date()).map(p=>[p.type,p.value]));
+  let left = 86400 - (+parts.hour*3600 + +parts.minute*60 + +parts.second);
+  const hh = String(Math.floor(left/3600)).padStart(2,"0"), mm = String(Math.floor(left%3600/60)).padStart(2,"0"), ss = String(left%60).padStart(2,"0");
+  el.textContent = `${hh}:${mm}:${ss}`;
+}
+setInterval(()=>{
+  tickCountdown();
+  // mudou o dia enquanto a página estava aberta: recomeça os jogos diários
+  for(const m of ["classico","trigger"]) if(S[m] && !S[m].practice && S[m].date!==lisbonDate()){ S[m]=null; if(m===mode) render(); }
+}, 1000);
+
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
+  if(busy) return;                 // não muda de modo a meio da animação
+  mode = b.id==="tab-classico" ? "classico" : "trigger";
+  document.querySelectorAll(".tabs button").forEach(x=>x.setAttribute("aria-selected", x===b));
+  render();
+});
+render();
+})();
+</script>
+
+</body>
+</html>
